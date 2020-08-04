@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/nats-io/stan.go"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -23,8 +24,48 @@ import (
 )
 
 // request /channelsz?sub=1
-func requestNatsServer2GetChannelsz() (uint64, uint64) {
-	return 1, 1
+func requestNatsServer2GetChannelsz(config *QueueWorkerConfig) (uint64, uint64) {
+	client := makeClient(config.TLSInsecure)
+	natsURL := fmt.Sprintf("http://%s:%d/streaming/channelsz?sub=1", config.NatsAddress, config.NatsPort)
+	request, err := http.NewRequest(http.MethodGet, natsURL, nil)
+	if err != nil {
+		panic("获取channel消费信息失败")
+
+	}
+	defer request.Body.Close()
+	res, err := client.Do(request)
+
+	var functionResult []byte
+	var statusCode int
+	if err != nil {
+		statusCode = http.StatusServiceUnavailable
+		if err != nil {
+			log.Printf("Error reading body for: %s, error: %s", natsURL, err)
+			panic("Error reading body")
+		}
+	} else {
+		statusCode = res.StatusCode
+		resData, err := ioutil.ReadAll(res.Body)
+		functionResult = resData
+		if err != nil {
+			log.Printf("Error reading body for: %s, error: %s", natsURL, err)
+			panic("Error reading body")
+		}
+	}
+	body := NSChannelsz{}
+	unmarshalErr := json.Unmarshal(functionResult, &body)
+
+	if unmarshalErr != nil {
+		log.Printf("[#%d] Unmarshal error: %s with data %s", unmarshalErr, functionResult)
+		panic("解析channelsz返回值错误")
+	}
+	//resp, err := http.Get(natsURL)
+	//if err != nil {
+	//	log.Printf("[#%d] Unable to post message due to invalid URL, error: %s", i, err.Error())
+	//	panic("获取channel消费信息失败")
+	//}
+
+	return body.channels[0].subscriptions[0].lastSeq, body.channels[0].lastSeq
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -40,16 +81,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	//	fmt.Fprintf(w, "Hi there, I love %s %d!", r.URL.Path[1:], counter)
 
 	//var finishFlag bool = false
-	counter := uint64(0)
-
-	// request channelsz to get current consume status
-	startSeq, endSeq := requestNatsServer2GetChannelsz()
-	// start a new consumer to status msgs
 	readConfig := ReadConfig{}
 	config, configErr := readConfig.Read()
 	if configErr != nil {
 		panic(configErr)
 	}
+	counter := uint64(0)
+
+	// request channelsz to get current consume status
+	startSeq, endSeq := requestNatsServer2GetChannelsz(config)
+	// start a new consumer to status msgs
+
 	hostname, _ := os.Hostname()
 
 	natsURL := fmt.Sprintf("nats://%s:%d", config.NatsAddress, config.NatsPort)

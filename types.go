@@ -16,6 +16,20 @@ type AsyncReport struct {
 	StatusCode   int     `json:"statusCode"`
 	TimeTaken    float64 `json:"timeTaken"`
 }
+type NSSubscription struct {
+	queueName   string `json:"queue_name"`
+	maxInFlight int    `json:"max_inflight"`
+	lastSeq     uint64 `json:"last_sent"`
+}
+type NSChannel struct {
+	name          string
+	firstSeq      uint64 `json:"first_seq"`
+	lastSeq       uint64 `json:"last_seq"`
+	subscriptions []NSSubscription
+}
+type NSChannelsz struct {
+	channels []NSChannel
+}
 
 // NATSQueue represents a subscription to NATS Streaming
 type NATSQueue struct {
