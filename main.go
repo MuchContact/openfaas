@@ -5,192 +5,73 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/nats-io/stan.go"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	stan "github.com/nats-io/stan.go"
-
 	"github.com/openfaas/faas-provider/auth"
 	"github.com/openfaas/faas/gateway/queue"
 	"github.com/openfaas/nats-queue-worker/nats"
-	"github.com/openfaas/nats-queue-worker/version"
+	//"github.com/openfaas/nats-queue-worker/version"
 )
 
-func main() {
+// request /channelsz?sub=1
+func requestNatsServer2GetChannelsz() (int, int) {
+	return 1, 1
+}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	//counter := uint64(0)
+	////atomic.AddUint64(&counter, 1)
+	////atomic.AddUint64(&counter, 1)
+	//started := time.Now()
+	//
+	////timeTaken := time.Since(started).Seconds()
+	//for counter <= 0 && time.Since(started).Seconds() <= 60 {
+	//	time.Sleep(50 * time.Millisecond)
+	//}
+	//	fmt.Fprintf(w, "Hi there, I love %s %d!", r.URL.Path[1:], counter)
+
+	//var finishFlag bool = false
+	counter := uint64(0)
+
+	// request channelsz to get current consume status
+	startSeq, endSeq = requestNatsServer2GetChannelsz()
+	// start a new consumer to status msgs
 	readConfig := ReadConfig{}
 	config, configErr := readConfig.Read()
-	if configErr != nil {
-		panic(configErr)
-	}
-
-	log.SetFlags(0)
-
 	hostname, _ := os.Hostname()
 
-	var credentials *auth.BasicAuthCredentials
-	var err error
-
-	if config.BasicAuth {
-		log.Printf("Loading basic authentication credentials")
-		credentials, err = LoadCredentials()
-		if err != nil {
-			log.Printf("Error with LoadCredentials: %s ", err.Error())
-		}
-	}
-
-	sha, release := version.GetReleaseInfo()
-	log.Printf("Starting queue-worker. Version: %s\tGit Commit: %s", release, sha)
-
-	client := makeClient(config.TLSInsecure)
-
-	counter := uint64(0)
+	natsURL := fmt.Sprintf("nats://%s:%d", config.NatsAddress, config.NatsPort)
+	metricGroupByFunc := make(map[string]*uint64)
 	messageHandler := func(msg *stan.Msg) {
-		i := atomic.AddUint64(&counter, 1)
-
-		log.Printf("[#%d] Received on [%s]: '%s'\n", i, msg.Subject, msg)
-
-		started := time.Now()
+		if msg.Sequence >= endSeq {
+			atomic.AddUint64(&counter, 1)
+			return
+		}
 
 		req := queue.Request{}
 		unmarshalErr := json.Unmarshal(msg.Data, &req)
-
 		if unmarshalErr != nil {
-			log.Printf("[#%d] Unmarshal error: %s with data %s", i, unmarshalErr, msg.Data)
+			log.Printf("Unmarshal error: %s with data %s", unmarshalErr, msg.Data)
 			return
 		}
 
-		xCallID := req.Header.Get("X-Call-Id")
-
-		functionURL := makeFunctionURL(&req, &config, req.Path, req.QueryString)
-		fmt.Printf("[#%d] Invoking: %s with %d bytes, via: %s\n", i, req.Function, len(req.Body), functionURL)
-
-		if config.DebugPrintBody {
-			fmt.Println(string(req.Body))
-		}
-
-		start := time.Now()
-		request, err := http.NewRequest(http.MethodPost, functionURL, bytes.NewReader(req.Body))
-		if err != nil {
-			log.Printf("[#%d] Unable to post message due to invalid URL, error: %s", i, err.Error())
-			return
-		}
-
-		defer request.Body.Close()
-		copyHeaders(request.Header, &req.Header)
-
-		res, err := client.Do(request)
-
-		var status int
-		var functionResult []byte
-
-		var statusCode int
-		if err != nil {
-			statusCode = http.StatusServiceUnavailable
+		target := metricGroupByFunc[req.Function]
+		if target == nil {
+			initCounter := uint64(0)
+			metricGroupByFunc[req.Function] = &initCounter
 		} else {
-			statusCode = res.StatusCode
+			atomic.AddUint64(target, 1)
 		}
-
-		duration := time.Since(start)
-
-		log.Printf("[#%d] Invoked: %s [%d] in %fs", i, req.Function, statusCode, duration.Seconds())
-
-		if err != nil {
-			status = http.StatusServiceUnavailable
-
-			log.Printf("[#%d] Error invoking %s, error: %s", i, req.Function, err)
-
-			timeTaken := time.Since(started).Seconds()
-
-			if req.CallbackURL != nil {
-				resultStatusCode, resultErr := postResult(&client,
-					res,
-					functionResult,
-					req.CallbackURL.String(),
-					xCallID,
-					status,
-					req.Function,
-					timeTaken)
-
-				if resultErr != nil {
-					log.Printf("[#%d] Posted callback to: %s - status %d, error: %s\n", i, req.CallbackURL.String(), http.StatusServiceUnavailable, resultErr.Error())
-				} else {
-					log.Printf("[#%d] Posted result to %s - status: %d", i, req.CallbackURL.String(), resultStatusCode)
-				}
-			}
-
-			if config.GatewayInvoke == false {
-				statusCode, reportErr := postReport(&client, req.Function, status, timeTaken, config.GatewayAddressURL(), credentials)
-				if reportErr != nil {
-					log.Printf("[#%d] Error posting report: %s\n", i, reportErr)
-				} else {
-					log.Printf("[#%d] Posting report to gateway for %s - status: %d\n", i, req.Function, statusCode)
-				}
-				return
-			}
-
-			return
-		}
-
-		if res.Body != nil {
-			defer res.Body.Close()
-
-			resData, err := ioutil.ReadAll(res.Body)
-			functionResult = resData
-
-			if err != nil {
-				log.Printf("[#%d] Error reading body for: %s, error: %s",i,  req.Function, err)
-			}
-
-			if config.WriteDebug {
-				fmt.Println(string(functionResult))
-			} else {
-				fmt.Printf("[#%d] %s returned %d bytes\n", i, req.Function, len(functionResult))
-			}
-		}
-
-		timeTaken := time.Since(started).Seconds()
-
-		if req.CallbackURL != nil {
-			log.Printf("[#%d] Callback to: %s\n", i, req.CallbackURL.String())
-
-			resultStatusCode, resultErr := postResult(&client,
-				res,
-				functionResult,
-				req.CallbackURL.String(),
-				xCallID,
-				res.StatusCode,
-				req.Function,
-				timeTaken)
-
-			if resultErr != nil {
-				log.Printf("[#%d] Error posting to callback-url: %s\n", i, resultErr)
-			} else {
-				log.Printf("[#%d] Posted result for %s to callback-url: %s, status: %d", i, req.Function, req.CallbackURL.String(), resultStatusCode)
-			}
-		}
-
-		if config.GatewayInvoke == false {
-			statusCode, reportErr := postReport(&client, req.Function, res.StatusCode, timeTaken, config.GatewayAddressURL(), credentials)
-			if reportErr != nil {
-				log.Printf("[#%d] Error posting report: %s\n", i, reportErr.Error())
-			} else {
-				log.Printf("[#%d] Posting report for %s, status: %d\n", i, req.Function, statusCode)
-			}
-		}
-
 	}
-
-	natsURL := fmt.Sprintf("nats://%s:%d", config.NatsAddress, config.NatsPort)
-
 	natsQueue := NATSQueue{
 		clusterID: config.NatsClusterName,
 		clientID:  "faas-worker-" + nats.GetClientID(hostname),
@@ -202,26 +83,27 @@ func main() {
 		quitCh:         make(chan struct{}),
 
 		subject:        config.NatsChannel,
-		qgroup:         config.NatsQueueGroup,
+		qgroup:         "vanke-faas",
 		messageHandler: messageHandler,
 		maxInFlight:    config.MaxInflight,
 		ackWait:        config.AckWait,
 	}
 
+	started := time.Now()
 	if initErr := natsQueue.connect(); initErr != nil {
 		log.Panic(initErr)
 	}
-
-	// Wait for a SIGINT (perhaps triggered by user with CTRL-C)
-	// Run cleanup when signal is received
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
-	fmt.Printf("\nReceived an interrupt, unsubscribing and closing connection...\n\n")
+	for counter <= 0 && time.Since(started).Seconds() <= 60 {
+		time.Sleep(50 * time.Millisecond)
+	}
 	if err := natsQueue.closeConnection(); err != nil {
 		log.Panicf("Cannot close connection to %s because of an error: %v\n", natsQueue.natsURL, err)
 	}
-	close(signalChan)
+}
+
+func main() {
+	http.HandleFunc("/metrics", handler)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 // makeClient constructs a HTTP client with keep-alive turned
