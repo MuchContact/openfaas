@@ -77,7 +77,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	natsQueue := NATSQueue{
 		clusterID: config.NatsClusterName,
-		clientID:  "faas-worker-" + nats.GetClientID(hostname),
+		clientID:  "faas-metric-worker-" + nats.GetClientID(hostname),
 		natsURL:   natsURL,
 
 		connMutex:      &sync.RWMutex{},
@@ -97,7 +97,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if initErr := natsQueue.connect(); initErr != nil {
 		log.Panic(initErr)
 	}
-	for counter <= 0 && time.Since(started).Seconds() <= 60 {
+	for counter <= 0 && int(time.Since(started).Seconds()) <= config.TimeOut {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err := natsQueue.closeConnection(); err != nil {

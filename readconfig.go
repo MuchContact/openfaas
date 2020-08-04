@@ -191,7 +191,7 @@ type QueueWorkerConfig struct {
 	GatewayInvoke  bool // GatewayInvoke invoke functions through gateway rather than directly
 	BasicAuth      bool
 	TLSInsecure    bool
-	TimeOut        int
+	TimeOut        int // 超时时间，单位：秒
 }
 
 func (q QueueWorkerConfig) GatewayAddressURL() string {
