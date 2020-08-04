@@ -36,6 +36,7 @@ type NATSQueue struct {
 	maxInFlight    int
 	subscription   stan.Subscription
 	msgChan        chan *stan.Msg
+	startSeq       uint64
 }
 
 // connect creates a subscription to NATS Streaming
@@ -75,7 +76,7 @@ func (q *NATSQueue) connect() error {
 	opts := []stan.SubscriptionOption{
 		stan.DurableName(strings.ReplaceAll(q.subject, ".", "_")),
 		stan.AckWait(q.ackWait),
-		stan.DeliverAllAvailable(),
+		stan.StartAtSequence(q.startSeq),
 		stan.MaxInflight(q.maxInFlight),
 	}
 	if q.maxInFlight > 1 {
@@ -97,7 +98,7 @@ func (q *NATSQueue) connect() error {
 		q.subject,
 		q.qgroup,
 		handler,
-		opts...
+		opts...,
 	)
 
 	if err != nil {

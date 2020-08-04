@@ -23,7 +23,7 @@ import (
 )
 
 // request /channelsz?sub=1
-func requestNatsServer2GetChannelsz() (int, int) {
+func requestNatsServer2GetChannelsz() (uint64, uint64) {
 	return 1, 1
 }
 
@@ -43,10 +43,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	counter := uint64(0)
 
 	// request channelsz to get current consume status
-	startSeq, endSeq = requestNatsServer2GetChannelsz()
+	startSeq, endSeq := requestNatsServer2GetChannelsz()
 	// start a new consumer to status msgs
 	readConfig := ReadConfig{}
 	config, configErr := readConfig.Read()
+	if configErr != nil {
+		panic(configErr)
+	}
 	hostname, _ := os.Hostname()
 
 	natsURL := fmt.Sprintf("nats://%s:%d", config.NatsAddress, config.NatsPort)
@@ -87,6 +90,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		messageHandler: messageHandler,
 		maxInFlight:    config.MaxInflight,
 		ackWait:        config.AckWait,
+		startSeq:       startSeq,
 	}
 
 	started := time.Now()

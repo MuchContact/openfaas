@@ -21,6 +21,16 @@ func (ReadConfig) Read() (QueueWorkerConfig, error) {
 		AckWait:     time.Second * 30,
 		MaxInflight: 1,
 	}
+	if val, exists := os.LookupEnv("faas_nats_timeout"); exists && val != "" {
+		value, err := strconv.Atoi(val)
+		if err != nil {
+			log.Println("converting faas_nats_timeout to int error:", err)
+		} else {
+			cfg.TimeOut = value
+		}
+	} else {
+		cfg.TimeOut = 60
+	}
 
 	if val, exists := os.LookupEnv("faas_nats_address"); exists {
 		cfg.NatsAddress = val
@@ -162,11 +172,11 @@ func (ReadConfig) Read() (QueueWorkerConfig, error) {
 }
 
 type QueueWorkerConfig struct {
-	NatsAddress                  string
-	NatsPort                     int
-	NatsClusterName              string
-	NatsChannel                  string
-	NatsQueueGroup               string
+	NatsAddress     string
+	NatsPort        int
+	NatsClusterName string
+	NatsChannel     string
+	NatsQueueGroup  string
 
 	GatewayAddress string
 	FunctionSuffix string
@@ -181,6 +191,7 @@ type QueueWorkerConfig struct {
 	GatewayInvoke  bool // GatewayInvoke invoke functions through gateway rather than directly
 	BasicAuth      bool
 	TLSInsecure    bool
+	TimeOut        int
 }
 
 func (q QueueWorkerConfig) GatewayAddressURL() string {
