@@ -5,7 +5,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/go-redis/redis"
 	"github.com/nats-io/stan.go"
+	"github.com/openfaas/faas-provider/auth"
+	"github.com/openfaas/faas/gateway/queue"
+	"github.com/openfaas/nats-queue-metric/nats"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,10 +20,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/openfaas/faas-provider/auth"
-	"github.com/openfaas/faas/gateway/queue"
-	"github.com/openfaas/nats-queue-metric/nats"
 	//"github.com/openfaas/nats-queue-worker/version"
 )
 
@@ -145,6 +145,71 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if err := natsQueue.closeConnection(); err != nil {
 		log.Panicf("Cannot close connection to %s because of an error: %v\n", natsQueue.natsURL, err)
 	}
+	//redisMap := queryRedis(&config)
+
+}
+func mergeMap(one map[string]*uint64, two map[string]*uint64) map[string]uint64 {
+	result := make(map[string]uint64)
+
+	for k, v := range one {
+		result[k] = *v
+	}
+
+	for k, v := range two {
+		target := result[k]
+		if target == 0 {
+			result[k] = *v
+		} else {
+			fmt.Printf("1 %s: %d  %d\n", k, result[k], *v)
+			result[k] = result[k] + *v
+			fmt.Printf("2 %s: %d  %d\n", k, result[k], *v)
+		}
+	}
+
+	return result
+}
+
+func queryRedis(config *QueueWorkerConfig) map[string]*uint64 {
+	metricGroupByFunc := make(map[string]*uint64)
+	if !config.RedisEnable {
+		return metricGroupByFunc
+	}
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     config.RedisAddr,
+		Password: config.RedisPassword, // no password set
+		DB:       config.RedisDB,       // use default DB
+	})
+
+	keys, _ := rdb.Keys("faas:req:*").Result()
+	for _, key := range keys {
+		funcName := strings.Split(key, ":")[2]
+		target := metricGroupByFunc[funcName]
+		if target == nil {
+			initCounter := uint64(1)
+			metricGroupByFunc[funcName] = &initCounter
+		} else {
+			atomic.AddUint64(target, 1)
+		}
+	}
+	return metricGroupByFunc
+}
+
+func fakehandler(w http.ResponseWriter, r *http.Request) {
+	//queryRedis()
+
+	//one := make(map[string]*uint64)
+	//it := uint64(3)
+	//one["one"] = &it
+	//
+	//two := make(map[string]*uint64)
+	//it2 := uint64(7)
+	//two["one"] = &it2
+	//it3 := uint64(8)
+	//two["two"] = &it3
+	//m := mergeMap(one, two)
+	//for k,v:=range m{
+	//	log.Printf("%s : %d", k, v)
+	//}
 }
 
 func main() {

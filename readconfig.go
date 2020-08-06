@@ -168,6 +168,14 @@ func (ReadConfig) Read() (QueueWorkerConfig, error) {
 		}
 	}
 
+	if val, exists := os.LookupEnv("tls_insecure"); exists {
+		if val == "1" || val == "true" {
+			cfg.TLSInsecure = true
+		} else {
+			cfg.TLSInsecure = false
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -192,6 +200,11 @@ type QueueWorkerConfig struct {
 	BasicAuth      bool
 	TLSInsecure    bool
 	TimeOut        int // 超时时间，单位：秒
+
+	RedisEnable   bool   // 是否启用redis
+	RedisAddr     string // eg: localhost:6379
+	RedisPassword string
+	RedisDB       int
 }
 
 func (q QueueWorkerConfig) GatewayAddressURL() string {
