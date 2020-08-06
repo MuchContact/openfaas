@@ -2,7 +2,7 @@ FROM golang:1.13-alpine as golang
 ENV CGO_ENABLED=0
 ENV GO111MODULE=off
 
-WORKDIR /go/src/github.com/openfaas/nats-queue-worker
+WORKDIR /go/src/github.com/openfaas/nats-queue-metric
 
 COPY vendor     vendor
 COPY handler    handler
@@ -23,8 +23,8 @@ RUN  VERSION=$(git describe --all --exact-match `git rev-parse HEAD` | grep tags
     && GIT_COMMIT=$(git rev-list -1 HEAD) \
     && env $go_opts CGO_ENABLED=0 go build \
         --ldflags "-s -w \
-        -X github.com/openfaas/nats-queue-worker/version.GitCommit=${GIT_COMMIT}\
-        -X github.com/openfaas/nats-queue-worker/version.Version=${VERSION}" \
+        -X github.com/openfaas/nats-queue-metric/version.GitCommit=${GIT_COMMIT}\
+        -X github.com/openfaas/nats-queue-metric/version.Version=${VERSION}" \
         -a -installsuffix cgo -o app . \
     && addgroup -S app \
     && adduser -S -g app app \
@@ -44,6 +44,6 @@ USER app
 COPY --from=golang /etc/passwd /etc/group /etc/
 COPY --from=golang /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=golang --chown=app:app /scratch-tmp /tmp
-COPY --from=golang /go/src/github.com/openfaas/nats-queue-worker/app    .
+COPY --from=golang /go/src/github.com/openfaas/nats-queue-metric/app    .
 
 CMD ["./app"]
