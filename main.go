@@ -19,7 +19,7 @@ import (
 
 	"github.com/openfaas/faas-provider/auth"
 	"github.com/openfaas/faas/gateway/queue"
-	"github.com/openfaas/nats-queue-worker/nats"
+	"github.com/openfaas/nats-queue-metric/nats"
 	//"github.com/openfaas/nats-queue-worker/version"
 )
 
@@ -36,15 +36,15 @@ func requestNatsServer2GetChannelsz(config *QueueWorkerConfig) (uint64, uint64) 
 	res, err := client.Do(request)
 
 	var functionResult []byte
-	var statusCode int
+	//var statusCode int
 	if err != nil {
-		statusCode = http.StatusServiceUnavailable
+		//statusCode = http.StatusServiceUnavailable
 		if err != nil {
 			log.Printf("Error reading body for: %s, error: %s", natsURL, err)
 			panic("Error reading body")
 		}
 	} else {
-		statusCode = res.StatusCode
+		//statusCode = res.StatusCode
 		resData, err := ioutil.ReadAll(res.Body)
 		functionResult = resData
 		if err != nil {
@@ -89,7 +89,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	counter := uint64(0)
 
 	// request channelsz to get current consume status
-	startSeq, endSeq := requestNatsServer2GetChannelsz(config)
+	startSeq, endSeq := requestNatsServer2GetChannelsz(&config)
 	// start a new consumer to status msgs
 
 	hostname, _ := os.Hostname()
